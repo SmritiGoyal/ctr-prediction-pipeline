@@ -8,7 +8,7 @@ data/*.parquet
 
 # Output files
 outputs/*.csv
-!outputs/.gitkeep
+!outputs/README.md
 
 # Python
 __pycache__/
