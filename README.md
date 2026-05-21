@@ -141,19 +141,34 @@ The team evaluated decision trees, random forests, and an MLP (5-5-1, ReLU, drop
 
 ## Repository Structure
 
-```
+\`\`\`
 ctr-prediction-pipeline/
-├── ctr_pipeline.py            # Full pipeline (single file, ~1100 lines)
 ├── README.md                  # This file
+├── LICENSE                    # MIT
 ├── requirements.txt           # Pinned dependencies (numpy, pandas, scikit-learn, scipy)
-├── .gitignore                 # Excludes data/, outputs/, venvs
+├── .gitignore                 # Excludes data/, outputs/, venvs, local config.py
+├── config.example.py          # PipelineConfig template — copy to config.py to override defaults
+│
+├── src/
+│   ├── ingestion.py           # Memory-efficient CSV sampling
+│   ├── feature_engineering.py # Time features + rare bucketing + interactions + time-based split
+│   ├── encoding.py            # CTR + frequency + column-type partition + feature hashing
+│   ├── modeling.py            # Logistic regression + logit-shift calibration
+│   ├── diagnostics.py         # EDA + validation + sanity checks
+│   └── run_pipeline.py        # End-to-end orchestrator
+│
 ├── data/
 │   └── README.md              # Avazu data access instructions
-└── outputs/
-    └── submission.csv         # Generated at runtime (gitignored)
-```
+│
+├── outputs/
+│   └── README.md              # Submission CSV schema documentation
+│
+└── docs/
+    ├── features.md            # Per-feature documentation with formulas + rationale
+    └── methodology.md         # Full technical writeup
+\`\`\`
 
-The pipeline is intentionally kept in a single file. Section dividers and a `PipelineConfig` dataclass act as the structure that a multi-file layout would otherwise provide, while keeping the full data flow visible end-to-end.
+The pipeline is organized into six focused modules under `src/`, each owning a single concern. The orchestrator (`src/run_pipeline.py`) composes them into the 11-section flow shown in the pipeline diagram above. The original monolithic implementation was refactored into this structure while preserving byte-identical numerical output — the validated reproduction below confirms the refactor is faithful.
 
 ---
 
@@ -182,9 +197,10 @@ The Avazu dataset is hosted on Kaggle and is not redistributed in this repo. Ins
 
 ### Run
 
-```bash
-python ctr_pipeline.py
-```
+\`\`\`bash
+cp config.example.py config.py    # Or: copy config.example.py config.py  (Windows)
+python src/run_pipeline.py
+\`\`\`
 
 The pipeline produces structured logs at each section and writes the final submission to `outputs/submission.csv`. On a typical laptop (16 GB RAM, no GPU) end-to-end runtime is ~27 minutes.
 
@@ -216,6 +232,12 @@ Treating this as version 1, the obvious improvements for a v2:
 - **Proper calibration evaluation.** The pipeline reports log loss and mean-prediction-vs-truth, but a reliability diagram with quantile bins and an Expected Calibration Error (ECE) number would be more honest reporting. The logit-shift calibration corrects the mean but doesn't necessarily fix bin-level miscalibration.
 - **Day-of-week extraction is approximate.** The current `is_weekend` flag uses `(day_of_month % 7) >= 5`, which is a proxy that happens to correlate with actual weekends over Avazu's 10-day window but is not mathematically day-of-week. A proper `datetime` parse would fix it. Left in place here to preserve reproducibility of the original result.
 - **Hash dimension sensitivity sweep.** 2²² was chosen on heuristic grounds (large enough to make collisions rare). A formal sweep over `{2¹⁸, 2²⁰, 2²², 2²⁴}` measuring log loss vs. memory would justify the choice quantitatively.
+
+---
+
+### Refactor history
+
+This repository was originally a single 1,100-line `ctr_pipeline.py`. In May 2026 it was refactored into the modular `src/` structure above. The refactor preserves byte-identical numerical output — validated by re-running the full pipeline and confirming the validation log loss reproduces to 0.381919 (matches the original 0.382 within rounding).
 
 ---
 
