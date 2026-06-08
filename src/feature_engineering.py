@@ -11,8 +11,9 @@ pre-encoding feature set:
                               hour_x_weekend, hour_bin, and a `date`
                               column used for the temporal train/val split
     2. Rare bucketing      — fold low-frequency category values into
-                              a single __RARE__ sentinel (leakage-safe:
-                              learned on training only, reapplied elsewhere)
+                              a single __RARE__ sentinel (learned on the
+                              full pre-split training CSV; count-based only,
+                              no click labels, so negligible leakage risk)
     3. Interactions        — explicit cross-category features that linear
                               models can't otherwise capture
     4. Column drops        — remove noisy / low-signal columns
@@ -79,8 +80,12 @@ def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
 
     The raw ``hour`` field is a compact integer timestamp in YYMMDDHH format
     (e.g., 14102100 = 2014-10-21 hour 00). EDA showed that user engagement
-    varies significantly by hour-of-day and day-of-week, so we extract these
-    components plus a weekday/weekend flag and two interaction terms.
+    varies significantly by hour-of-day and by weekday/weekend status, so we
+    extract these components plus two interaction terms.
+
+    ``is_weekend`` is derived from the actual calendar day-of-week by parsing
+    the full YYMMDDHH timestamp with ``pd.to_datetime``. Using day-of-month
+    modulo 7 is incorrect because it does not reflect the real weekday.
 
     Args:
         df: DataFrame containing the raw ``hour`` integer column.
@@ -98,7 +103,16 @@ def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hour_of_day"] = (hour % 100).astype("uint8")
     df["day"] = ((hour // 100) % 100).astype("uint8")
     df["month"] = ((hour // 10000) % 100).astype("uint8")
-    df["is_weekend"] = ((df["day"] % 7) >= 5).astype("uint8")
+
+    # Compute actual day-of-week from the full YYMMDDHH timestamp.
+    # The naive formula (day % 7) >= 5 uses the day-of-month modulo 7,
+    # which does NOT reflect the calendar day-of-week and mislabels days
+    # near the edges of each week (e.g. Oct 25 Sat -> incorrectly weekday,
+    # Oct 27 Mon -> incorrectly weekend for the Avazu date range).
+    closed_dt = pd.to_datetime(
+        df["hour"].astype(str).str.zfill(8), format="%y%m%d%H", errors="coerce"
+    )
+    df["is_weekend"] = (closed_dt.dt.dayofweek >= 5).astype("uint8")
 
     # Interaction features capturing weekend-specific hourly patterns
     df["hour_x_weekend"] = (df["hour_of_day"] * df["is_weekend"]).astype("uint8")
