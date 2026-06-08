@@ -4,7 +4,7 @@ ingestion.py
 Memory-efficient sampling from the Avazu training CSV.
 
 This module handles every stage where the pipeline reads the (very large)
-training file. The Avazu training file has ~30 million rows and ~5.9 GB
+training file. The Avazu training file has ~32 million rows and ~5.9 GB
 on disk; loading it in full peaks at over 20 GB of RAM. The functions
 here read the file in chunked passes and Bernoulli/random-sample down
 to a manageable size.
