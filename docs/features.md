@@ -44,12 +44,14 @@ raw CSV
 | `hour_of_day` | `hour % 100` | uint8, range 0-23 |
 | `day` | `(hour // 100) % 100` | uint8, range 1-31 |
 | `month` | `(hour // 10000) % 100` | uint8, typically 10 (October) |
-| `is_weekend` | `(day % 7) >= 5` | uint8, 0 or 1 |
+| `is_weekend` | `pd.to_datetime(hour, format="%y%m%d%H").dayofweek >= 5` | uint8, 0 or 1 |
 | `hour_x_weekend` | `hour_of_day * is_weekend` | uint8, range 0-23 |
 | `hour_bin` | `hour_of_day // 4` | uint8, range 0-5 (six 4-hour buckets) |
 | `date` | `hour // 100` | int32, used only for the time-based split |
 
 **Rationale:** EDA showed CTR varies meaningfully by hour-of-day (peak engagement during evening hours) and by weekday/weekend (different mobile vs. desktop usage patterns). The `hour_x_weekend` interaction captures weekend-specific hourly behavior that a linear model couldn't otherwise represent. The `hour_bin` provides a coarser temporal grouping at lower cardinality, useful for the CTR encoding stage.
+
+`is_weekend` is derived from the actual calendar day-of-week by parsing the full YYMMDDHH timestamp with `pd.to_datetime`. The naive shortcut `(day % 7) >= 5` — using day-of-month modulo 7 — does not correctly reflect the actual weekday and mislabels days near week boundaries; the timestamp parse is the correct approach.
 
 The `date` column is created solely to support the time-based train/validation split in Section D of the pipeline. It is dropped before model fitting.
 
@@ -63,7 +65,7 @@ The `date` column is created solely to support the time-based train/validation s
 
 **Rationale:** EDA revealed that these three columns have tens of thousands of unique values, but the long tail consists of values appearing only once or twice. Treating each rare value as its own category produces near-zero signal AND inflates the hash space. Folding them into `__RARE__` lets the model learn one effective "rare site/app" coefficient, which captures the small but consistent CTR pattern associated with low-traffic sources.
 
-**Leakage safety:** The set of rare values is learned exclusively on the training split and applied unchanged to the validation, test, and retrain samples. If a value is rare in training but common in test, it stays bucketed — this is intentional. The opposite case (rare in test, common in training) doesn't apply since the training set determines the bucket boundary.
+**Leakage safety:** The set of rare values is learned on the full pre-split training CSV and applied unchanged to the validation, test, and retrain samples. In the pipeline, this learning happens in Section C (before the time-based split in Section D). Because the threshold is count-based only — no click labels are used — the practical leakage risk is negligible: a value near the 50-occurrence boundary will be classified the same way with or without the validation rows. If strict post-split scoping is required for a deployment context, `learn_rare_buckets` can be moved to after Section D with `train_df` as input.
 
 The `threshold=50` value is configurable via `config.py` (`rare_threshold`).
 
@@ -105,7 +107,7 @@ The `threshold=50` value is configurable via `config.py` (`rare_threshold`).
 
 **Source:** the engineered `date` column.
 
-**Transformation:** Sort the unique dates, then split chronologically. The earliest 80% of unique dates become the training set; the latest 20% become the validation set.
+**Transformation:** Sort the unique dates, then split chronologically. The earliest 80% of unique dates become the training set; the latest 20% become the validation set. On the Avazu dataset (9 unique dates), this places 7 dates in training and 2 in validation, yielding a ~75/25 row split because the final dates carry more impressions than average.
 
 **Rationale:** A random train/test split would leak future user behavior patterns backward into training, producing optimistic validation log-loss that wouldn't hold in production. CTR systems must predict *future* clicks from a model trained on *past* data, and the train/validation split must mirror that constraint.
 
