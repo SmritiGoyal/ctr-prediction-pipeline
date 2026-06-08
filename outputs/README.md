@@ -6,9 +6,9 @@ This directory holds the artifact produced by `src/run_pipeline.py`. The file is
 
 | Filename | Rows | Granularity |
 |---|---|---|
-| `submission.csv` | ~13,015,341 | One row per test impression |
+| `submission.csv` | 13,015,341 | One row per test impression |
 
-The exact row count depends on the version of the Avazu test set used. The pipeline asserts row-count preservation between the submission template and the final write — if these don't match, the script fails fast.
+The row count is fixed by the Avazu test set. The pipeline asserts row-count preservation between the submission template and the final write — if these don't match, the script fails fast.
 
 ## Schema
 
@@ -23,7 +23,7 @@ The `id` and row order are taken from `data/ProjectSubmission-TeamX.csv`, the te
 
 ## Validated headline metrics
 
-The pipeline targets log-loss minimization on the held-out 20% time-based validation split. On a validated end-to-end run:
+The pipeline targets log-loss minimization on a time-based validation split (the latest 2 of 9 unique dates, ~25% of rows). On a validated end-to-end run:
 
 | Metric | Value |
 |---|---|
@@ -39,7 +39,7 @@ The 0.382 log-loss is the headline result — it's what the pipeline is engineer
 
 The pipeline writes one file (`submission.csv`) but produces several useful intermediate diagnostics via the logger:
 
-1. **EDA diagnostics** — cardinality and CTR breakdowns on the 1M-row EDA sample (Section A of `run_pipeline.py`)
+1. **EDA diagnostics** — cardinality and CTR breakdowns on the EDA sample (Section A of `run_pipeline.py`)
 2. **Validation diagnostics** — initial-model log-loss vs baseline, prediction quantiles (Section G)
 3. **Final validation log-loss** — after retrain + calibration (Section I)
 4. **Test prediction sanity checks** — NaN/inf counts, min/max bounds, quantiles (Section J)
