@@ -4,7 +4,7 @@ This project uses the **Avazu Click-Through Rate Prediction** dataset, a public 
 
 - **Source:** https://www.kaggle.com/c/avazu-ctr-prediction
 - **License:** Kaggle competition rules apply
-- **Size:** ~5.9 GB compressed, ~30M training rows + ~13M test rows
+- **Size:** ~5.9 GB compressed, ~32M training rows + ~13M test rows
 
 ## Files expected in this directory
 
