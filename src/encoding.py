@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 class LearnedEncoders:
     """Container bundling all encoders fit on the training split.
 
-    Encoders are learned exclusively on the training split (the older 80%)
+    Encoders are learned exclusively on the training split (the older ~75%
+    of rows by time, corresponding to the first 7 of 9 unique dates on the
+    Avazu dataset)
     and re-applied consistently to validation, test, and retrain samples.
     This is the key mechanism for preventing target leakage from the
     validation or test sets back into the training features.
