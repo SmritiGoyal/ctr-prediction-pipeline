@@ -25,7 +25,7 @@ For CTR systems in production, log-loss is the right metric because ad-ranking d
 
 ### 1.3 The naive baseline
 
-The dumbest model — predicting the global CTR (~0.17) for every impression — produces a log-loss of approximately **0.4312**. Any useful model must improve on this baseline.
+The dumbest model — predicting the global CTR (~0.175) for every impression — produces a log-loss of approximately **0.4312**. Any useful model must improve on this baseline.
 
 Our pipeline achieves a validation log-loss of **0.382**, an ~11.4% improvement. This sounds small in percentage terms but is substantial in log-loss space.
 
@@ -33,12 +33,12 @@ Our pipeline achieves a validation log-loss of **0.382**, an ~11.4% improvement.
 
 ### 2.1 The memory problem
 
-The Avazu training file is ~5.9 GB compressed (~25 GB uncompressed), with ~30 million rows. Loading it in full peaks at over 20 GB of RAM. Two strategies are used to keep memory bounded:
+The Avazu training file is ~5.9 GB compressed (~25 GB uncompressed), with ~32 million rows. Loading it in full peaks at over 20 GB of RAM. Two strategies are used to keep memory bounded:
 
 1. **EDA sampling** — a 1M-row sample is drawn from the full file by reading in chunks and randomly sampling within each chunk. This preserves the temporal distribution while staying in memory.
 2. **Retrain sampling** — for the final model retrain, a 10M-row Bernoulli sample is drawn from the full file. The uniform per-row sampling probability ensures the temporal density of the source is preserved.
 
-Both samples are reproducible via `random_state=42`. The validation set is from the time-based split on the full 30M rows (since the validation split happens *after* loading the full training file in Section B of `run_pipeline.py`).
+Both samples are reproducible via `random_state=42`. The validation set is from the time-based split on the full 32M rows (since the validation split happens *after* loading the full training file in Section B of `run_pipeline.py`).
 
 ### 2.2 The leakage problem
 
@@ -46,14 +46,14 @@ CTR pipelines have multiple leakage risks:
 
 1. **Random splits leak future patterns.** A random train/test split would give the model information about future user behavior. **Solution:** time-based split — the 20% latest dates form the validation set.
 2. **Target encoding leaks labels.** If we compute the per-category CTR on the full dataset and then use it as a feature, the validation/test rows contributed to their own labels. **Solution:** CTR maps are learned only on the training split. Unseen categories fall back to the global training CTR.
-3. **Rare-value bucketing leaks distribution.** If we decide which values are "rare" based on the full dataset, the validation set influences which values get bucketed. **Solution:** The rare-value sets are learned only on training. Validation/test apply the same bucket assignments without re-learning.
+3. **Rare-value bucketing leaks distribution.** If we decide which values are "rare" based on the full dataset, the validation set influences which values get bucketed. **Note:** In the current pipeline, rare-value sets are learned on the full pre-split training CSV (Section C, before the time-based split in Section D). Because the threshold is count-based only — no click labels are involved — the practical impact is negligible. CTR maps and frequency maps, which do use click labels, are correctly learned on `train_df` only (post-split, Section E).
 4. **Calibration leaks target moments.** If we calibrate test predictions to have the same mean as the validation set, we're using validation labels to shift test predictions. **Solution:** Test predictions are calibrated using the training-set CTR as the target mean.
 
 All four leakage risks are handled by the `LearnedEncoders` dataclass, which bundles every train-fit encoder and is reapplied identically to validation, test, and the retrain sample.
 
 ### 2.3 Time-based split rationale
 
-The training set uses the earliest 80% of unique dates; the validation set uses the latest 20%. This means the model's validation log-loss is a realistic estimate of how it would perform on the *next batch* of impressions — exactly what matters for a production CTR system.
+The training set uses the earliest 80% of unique dates; the validation set uses the latest 20%. On the Avazu dataset, which spans 9 unique dates, this means 7 dates in training and 2 in validation (~75/25 by row count, since the final dates carry more impressions). This means the model's validation log-loss is a realistic estimate of how it would perform on the *next batch* of impressions — exactly what matters for a production CTR system.
 
 A random split would inflate validation scores by ~5-10% in log-loss terms (based on a sanity check during development). The time-based split is more honest.
 
@@ -88,9 +88,9 @@ Columns like `site_category`, `app_category`, `banner_pos` go through CTR encodi
 Without smoothing, a category that appears 3 times with 3 clicks would encode as 1.0. With `alpha=50`:
 
 ```
-smoothed_ctr = (3 + 50 * 0.17) / (3 + 50)
-             = (3 + 8.5) / 53
-             = 0.217
+smoothed_ctr = (3 + 50 * 0.175) / (3 + 50)
+             = (3 + 8.75) / 53
+             = 0.222
 ```
 
 Much more reasonable. The `alpha=50` parameter was chosen by sensitivity analysis on the EDA sample — values between 30 and 100 produced similar validation log-loss; `alpha=50` was the midpoint of that range.
@@ -179,7 +179,7 @@ In order of how confidently each can be defended:
 
 1. **The pipeline produces 0.382 log-loss on the validation set**, an ~11.4% improvement over the naive baseline (0.4312). This is reproducible from `random_state=42`.
 
-2. **The pipeline is leakage-safe.** All encoders, rare-value sets, and calibration target means are learned exclusively from data available at training time. Validation log-loss is a realistic estimate of production performance.
+2. **The pipeline is leakage-safe for all label-dependent encodings.** CTR maps, frequency maps, and calibration target means are learned exclusively on `train_df` (the post-split training fold). Rare-value bucketing is learned on the full pre-split training CSV, but uses only value counts — no click labels — so the practical leakage risk is negligible. Validation log-loss is a realistic estimate of production performance.
 
 3. **The methodology is grounded in standard ML engineering practices.** Time-based split, Bayesian smoothing, feature hashing, L2-regularized LR, logit-space calibration — none are exotic; each addresses a specific known failure mode.
 
